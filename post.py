@@ -14,12 +14,33 @@ GRAPH = "https://graph.facebook.com/v21.0"
 LOG = "posted.json"
 
 
+_PT = {}
+
+
+def page_token():
+    """Vrati token stranky. Kdyz je v PAGE_TOKEN uzivatelsky token, odvodi z nej token stranky."""
+    if "t" in _PT:
+        return _PT["t"]
+    tok, page = os.environ["PAGE_TOKEN"].strip(), os.environ["FB_PAGE_ID"].strip()
+    me = requests.get("%s/me" % GRAPH, params={"fields": "id,name", "access_token": tok}, timeout=30).json()
+    print("Token patri:", me.get("name"), me.get("id"), me.get("error", {}).get("message", ""))
+    if me.get("id") != page:
+        r = requests.get("%s/%s" % (GRAPH, page), params={"fields": "access_token,name", "access_token": tok}, timeout=30).json()
+        if r.get("access_token"):
+            print("Pouzit token stranky:", r.get("name"))
+            tok = r["access_token"]
+        else:
+            print("Token stranky nelze odvodit:", r.get("error", {}).get("message", r))
+    _PT["t"] = tok
+    return tok
+
+
 def ig_id():
     if os.environ.get("IG_USER_ID"):
-        return os.environ["IG_USER_ID"]
+        return os.environ["IG_USER_ID"].strip()
     try:
         r = requests.get("%s/%s" % (GRAPH, os.environ["FB_PAGE_ID"]), params={"fields": "instagram_business_account",
-                         "access_token": os.environ["PAGE_TOKEN"]}, timeout=30).json()
+                         "access_token": page_token()}, timeout=30).json()
         return r.get("instagram_business_account", {}).get("id")
     except Exception:
         return None
@@ -238,7 +259,7 @@ def host_image(path):
 
 
 def post_facebook(path, cap):
-    page, tok = os.environ["FB_PAGE_ID"], os.environ["PAGE_TOKEN"]
+    page, tok = os.environ["FB_PAGE_ID"].strip(), page_token()
     with open(path, "rb") as fh:
         r = requests.post("%s/%s/photos" % (GRAPH, page), data={"message": cap, "access_token": tok},
                           files={"source": fh}, timeout=120).json()
@@ -248,7 +269,7 @@ def post_facebook(path, cap):
 
 
 def post_instagram(url, cap):
-    ig, tok = ig_id(), os.environ["PAGE_TOKEN"]
+    ig, tok = ig_id(), page_token()
     if not ig:
         log("Instagram není propojen s tokenem - přeskočen")
         return None

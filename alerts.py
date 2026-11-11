@@ -10,19 +10,40 @@ SEEN = "alerts_seen.json"
 TO = os.environ.get("ALERT_TO", "bpprimorsko@gmail.com")
 
 
+_PT = {}
+
+
+def page_token():
+    """Vrati token stranky. Kdyz je v PAGE_TOKEN uzivatelsky token, odvodi z nej token stranky."""
+    if "t" in _PT:
+        return _PT["t"]
+    tok, page = os.environ["PAGE_TOKEN"].strip(), os.environ["FB_PAGE_ID"].strip()
+    me = requests.get("%s/me" % GRAPH, params={"fields": "id,name", "access_token": tok}, timeout=30).json()
+    print("Token patri:", me.get("name"), me.get("id"), me.get("error", {}).get("message", ""))
+    if me.get("id") != page:
+        r = requests.get("%s/%s" % (GRAPH, page), params={"fields": "access_token,name", "access_token": tok}, timeout=30).json()
+        if r.get("access_token"):
+            print("Pouzit token stranky:", r.get("name"))
+            tok = r["access_token"]
+        else:
+            print("Token stranky nelze odvodit:", r.get("error", {}).get("message", r))
+    _PT["t"] = tok
+    return tok
+
+
 def ig_id():
     if os.environ.get("IG_USER_ID"):
-        return os.environ["IG_USER_ID"]
+        return os.environ["IG_USER_ID"].strip()
     try:
         r = requests.get("%s/%s" % (GRAPH, os.environ["FB_PAGE_ID"]), params={"fields": "instagram_business_account",
-                         "access_token": os.environ["PAGE_TOKEN"]}, timeout=30).json()
+                         "access_token": page_token()}, timeout=30).json()
         return r.get("instagram_business_account", {}).get("id")
     except Exception:
         return None
 
 
 def g(path, **params):
-    params["access_token"] = os.environ["PAGE_TOKEN"]
+    params["access_token"] = page_token()
     r = requests.get("%s/%s" % (GRAPH, path), params=params, timeout=40).json()
     if "error" in r:
         print("Graph chyba", path, r["error"].get("message"))
@@ -31,7 +52,7 @@ def g(path, **params):
 
 
 def collect():
-    page, ig = os.environ["FB_PAGE_ID"], ig_id()
+    page, ig = os.environ["FB_PAGE_ID"].strip(), ig_id()
     items = []
     for c in g(page + "/conversations", fields="id,updated_time,messages.limit(1){id,from,message,created_time}", limit=20).get("data", []):
         for m in c.get("messages", {}).get("data", []):
