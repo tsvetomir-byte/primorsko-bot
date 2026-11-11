@@ -182,11 +182,31 @@ def recipes():
     return out
 
 
+def recipe_images(r, limit=3):
+    """Fotky receptu: vlastni fotka z karty + fotky surovin z e-shopu (na webu je dotahuje JS, v HTML nejsou)."""
+    imgs = [r["img"]] if r["img"] else []
+    for h, _ in r["prods"]:
+        if len(imgs) >= limit:
+            break
+        try:
+            p = product(SHOP + h if h.startswith("/") else h)
+        except Exception as e:
+            log("skip foto", h, e)
+            continue
+        if p and p["img"] not in imgs:
+            imgs.append(p["img"])
+    return imgs
+
+
 def pick_recipe(done):
     allr = [r for r in recipes() if r["name"] not in done]
-    withimg = [r for r in allr if r["img"]]
-    pool = withimg or allr
-    return random.choice(pool) if pool else None
+    random.shuffle(allr)
+    for r in allr[:25]:
+        r["imgs"] = recipe_images(r)
+        if r["imgs"]:
+            return r
+        log("recept bez fotky - preskakuji:", r["name"])
+    return None
 
 
 def recipe_caption(r):
@@ -232,10 +252,31 @@ def render(img_url, kicker, title, sub, out="post.jpg"):
     canvas = Image.new("RGB", (W, H), WHITE)
     d = ImageDraw.Draw(canvas)
     band_h = 360
-    if img_url:
-        ph = Image.open(io.BytesIO(get(img_url).content)).convert("RGB")
-        ph = ImageOps.contain(ph, (W - 120, H - band_h - 140))
-        canvas.paste(ph, ((W - ph.width) // 2, 70 + (H - band_h - 140 - ph.height) // 2))
+    urls = [u for u in (img_url if isinstance(img_url, list) else [img_url]) if u]
+    photos = []
+    for u in urls:
+        try:
+            photos.append(Image.open(io.BytesIO(get(u).content)).convert("RGB"))
+        except Exception as e:
+            log("foto nelze nacist", u, e)
+    if not photos:
+        raise RuntimeError("Prispevek nema zadnou fotku - nepublikuji prazdny obrazek")
+    area_w, area_h, top = W - 120, H - band_h - 140, 70
+    if len(photos) == 1:
+        ph = ImageOps.contain(photos[0], (area_w, area_h))
+        canvas.paste(ph, ((W - ph.width) // 2, top + (area_h - ph.height) // 2))
+    else:
+        # 2 fotky vedle sebe, 3 = jedna velka nahore + dve dole
+        gap = 20
+        if len(photos) == 2:
+            cells = [(60, top, area_w // 2 - gap // 2, area_h), (60 + area_w // 2 + gap // 2, top, area_w // 2 - gap // 2, area_h)]
+        else:
+            hh = (area_h - gap) // 2
+            hw = (area_w - gap) // 2
+            cells = [(60, top, area_w, hh), (60, top + hh + gap, hw, hh), (60 + hw + gap, top + hh + gap, hw, hh)]
+        for ph, (x, y, cw, ch) in zip(photos, cells):
+            ph = ImageOps.contain(ph, (cw, ch))
+            canvas.paste(ph, (x + (cw - ph.width) // 2, y + (ch - ph.height) // 2))
     d.rectangle([0, H - band_h, W, H], fill=GREEN)
     d.rectangle([0, 0, W, 14], fill=GREEN)
     fk, ft, fs = font("Poppins-Medium", 34), font("Poppins-Bold", 54), font("Poppins-Medium", 30)
@@ -317,8 +358,10 @@ def main():
         r = pick_recipe(data["recipes"])
         if not r:
             data["recipes"], r = [], pick_recipe([])
+        if not r:
+            raise RuntimeError("Zadny recept s fotkou")
         cap = recipe_caption(r)
-        render(r["img"], "Recept dne · " + (r["label"] or "Balkánská kuchyně"), r["name"], "bp.bpprimorsko.cz/recepty")
+        render(r["imgs"], "Recept dne · " + (r["label"] or "Balkánská kuchyně"), r["name"], "bp.bpprimorsko.cz/recepty")
         key = r["name"]
     else:
         p = pick_product(data["products"])
