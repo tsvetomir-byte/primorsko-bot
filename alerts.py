@@ -26,7 +26,16 @@ def page_token():
             print("Pouzit token stranky:", r.get("name"))
             tok = r["access_token"]
         else:
-            print("Token stranky nelze odvodit:", r.get("error", {}).get("message", r))
+            acc = requests.get("%s/me/accounts" % GRAPH, params={"fields": "id,name,access_token", "limit": 100,
+                               "access_token": tok}, timeout=30).json()
+            pages = acc.get("data", [])
+            pick = [p for p in pages if p.get("id") == page] or [p for p in pages if "primorsko" in p.get("name", "").lower()]
+            if pick and pick[0].get("access_token"):
+                print("Pouzit token stranky ze seznamu:", pick[0].get("name"), pick[0].get("id"))
+                tok = pick[0]["access_token"]
+                os.environ["FB_PAGE_ID"] = pick[0]["id"]
+            else:
+                print("Token stranky nelze odvodit:", acc.get("error", {}).get("message", "stranek: %d" % len(pages)))
     _PT["t"] = tok
     return tok
 
@@ -52,7 +61,8 @@ def g(path, **params):
 
 
 def collect():
-    page, ig = os.environ["FB_PAGE_ID"].strip(), ig_id()
+    ig = ig_id()
+    page = os.environ["FB_PAGE_ID"].strip()
     items = []
     for c in g(page + "/conversations", fields="id,updated_time,messages.limit(1){id,from,message,created_time}", limit=20).get("data", []):
         for m in c.get("messages", {}).get("data", []):

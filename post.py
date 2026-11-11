@@ -30,7 +30,16 @@ def page_token():
             print("Pouzit token stranky:", r.get("name"))
             tok = r["access_token"]
         else:
-            print("Token stranky nelze odvodit:", r.get("error", {}).get("message", r))
+            acc = requests.get("%s/me/accounts" % GRAPH, params={"fields": "id,name,access_token", "limit": 100,
+                               "access_token": tok}, timeout=30).json()
+            pages = acc.get("data", [])
+            pick = [p for p in pages if p.get("id") == page] or [p for p in pages if "primorsko" in p.get("name", "").lower()]
+            if pick and pick[0].get("access_token"):
+                print("Pouzit token stranky ze seznamu:", pick[0].get("name"), pick[0].get("id"))
+                tok = pick[0]["access_token"]
+                os.environ["FB_PAGE_ID"] = pick[0]["id"]
+            else:
+                print("Token stranky nelze odvodit:", acc.get("error", {}).get("message", "stranek: %d" % len(pages)))
     _PT["t"] = tok
     return tok
 
@@ -259,7 +268,8 @@ def host_image(path):
 
 
 def post_facebook(path, cap):
-    page, tok = os.environ["FB_PAGE_ID"].strip(), page_token()
+    tok = page_token()
+    page = os.environ["FB_PAGE_ID"].strip()
     with open(path, "rb") as fh:
         r = requests.post("%s/%s/photos" % (GRAPH, page), data={"message": cap, "access_token": tok},
                           files={"source": fh}, timeout=120).json()
