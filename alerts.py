@@ -10,6 +10,17 @@ SEEN = "alerts_seen.json"
 TO = os.environ.get("ALERT_TO", "bpprimorsko@gmail.com")
 
 
+def ig_id():
+    if os.environ.get("IG_USER_ID"):
+        return os.environ["IG_USER_ID"]
+    try:
+        r = requests.get("%s/%s" % (GRAPH, os.environ["FB_PAGE_ID"]), params={"fields": "instagram_business_account",
+                         "access_token": os.environ["PAGE_TOKEN"]}, timeout=30).json()
+        return r.get("instagram_business_account", {}).get("id")
+    except Exception:
+        return None
+
+
 def g(path, **params):
     params["access_token"] = os.environ["PAGE_TOKEN"]
     r = requests.get("%s/%s" % (GRAPH, path), params=params, timeout=40).json()
@@ -20,7 +31,7 @@ def g(path, **params):
 
 
 def collect():
-    page, ig = os.environ["FB_PAGE_ID"], os.environ.get("IG_USER_ID")
+    page, ig = os.environ["FB_PAGE_ID"], ig_id()
     items = []
     for c in g(page + "/conversations", fields="id,updated_time,messages.limit(1){id,from,message,created_time}", limit=20).get("data", []):
         for m in c.get("messages", {}).get("data", []):

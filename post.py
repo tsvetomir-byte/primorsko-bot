@@ -12,6 +12,17 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 SHOP = "https://bp.bpprimorsko.cz"
 GRAPH = "https://graph.facebook.com/v21.0"
 LOG = "posted.json"
+
+
+def ig_id():
+    if os.environ.get("IG_USER_ID"):
+        return os.environ["IG_USER_ID"]
+    try:
+        r = requests.get("%s/%s" % (GRAPH, os.environ["FB_PAGE_ID"]), params={"fields": "instagram_business_account",
+                         "access_token": os.environ["PAGE_TOKEN"]}, timeout=30).json()
+        return r.get("instagram_business_account", {}).get("id")
+    except Exception:
+        return None
 POST_HOUR = int(os.environ.get("POST_HOUR", "11"))
 UA = {"User-Agent": "Mozilla/5.0 (PrimorskoBot)"}
 GREEN, DARK, WHITE = (46, 125, 50), (20, 60, 25), (255, 255, 255)
@@ -237,9 +248,9 @@ def post_facebook(path, cap):
 
 
 def post_instagram(url, cap):
-    ig, tok = os.environ.get("IG_USER_ID"), os.environ["PAGE_TOKEN"]
+    ig, tok = ig_id(), os.environ["PAGE_TOKEN"]
     if not ig:
-        log("IG_USER_ID není nastaveno - Instagram přeskočen")
+        log("Instagram není propojen s tokenem - přeskočen")
         return None
     cap = cap[:2150]
     r = requests.post("%s/%s/media" % (GRAPH, ig), data={"image_url": url, "caption": cap, "access_token": tok}, timeout=60).json()
