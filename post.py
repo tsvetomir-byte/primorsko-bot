@@ -104,6 +104,15 @@ def product_caption(p):
 
 
 # ------------------------------------------------------------------ recepty
+def meta_txt(metai, desc):
+    if not metai:
+        return ""
+    t = clean(metai.group(1))
+    if desc and clean(desc.group(1)) in t:
+        t = t.split(clean(desc.group(1)))[0]
+    return t.split("Suroviny")[0].strip()[:80]
+
+
 def recipes():
     html = get(SHOP + "/recepty/").text
     out = []
@@ -119,12 +128,16 @@ def recipes():
         ingr = re.search(r"Suroviny</h3>(.*?)</(?:ul|ol)>", block, re.S)
         ingr = [clean(x) for x in re.findall(r"<li[^>]*>(.*?)</li>", ingr.group(1), re.S)] if ingr else []
         prods = []
-        for href, txt in re.findall(r'<a[^>]+href="(/[^"#?]+/)"[^>]*>(.*?)</a>', block, re.S):
-            txt = clean(txt)
-            if txt and (href, txt) not in prods:
-                prods.append((href, txt))
-        out.append({"name": name, "desc": clean(desc.group(1)) if desc else "", "meta": clean(metai.group(1)) if metai else "",
-                    "label": clean(lbl.group(1)) if lbl else "", "img": imgs[0] if imgs else "", "ingr": ingr, "prods": prods[:5]})
+        di = re.search(r'data-items="([^"]*)"', block)
+        if di:
+            try:
+                for it in json.loads(unescape(di.group(1))):
+                    if it.get("u") and (it["u"], it.get("r", "")) not in prods:
+                        prods.append((it["u"], it.get("r", "").strip() or "produkt"))
+            except ValueError:
+                pass
+        out.append({"name": name, "desc": clean(desc.group(1)) if desc else "", "meta": meta_txt(metai, desc),
+                    "label": clean(lbl.group(1)) if lbl else "", "img": imgs[0] if imgs else "", "ingr": ingr, "prods": prods[:8]})
     return out
 
 
