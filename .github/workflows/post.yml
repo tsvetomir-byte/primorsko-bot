@@ -1,0 +1,71 @@
+name: Primorsko - denni prispevek (11:00) a hlidani dotazu
+
+on:
+  schedule:
+    - cron: "5 9,10 * * *"      # prispevek kolem 11:00 Praha (skript hlida hodinu)
+    - cron: "35 * * * *"        # kazdou hodinu kontrola novych dotazu
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Jen vytvorit obrazek, nepublikovat (1 = ano)"
+        default: "1"
+      kind:
+        description: "product / recipe (prazdne = podle dne)"
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: primorsko
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nastroje
+        run: |
+          pip install -q requests pillow
+          mkdir -p fonts
+          curl -sL -o fonts/Poppins-Bold.ttf https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf
+          curl -sL -o fonts/Poppins-Medium.ttf https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Medium.ttf
+      - name: Prispevek
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '5 9,10 * * *'
+        env:
+          PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+          KIND: ${{ github.event.inputs.kind }}
+        run: python post.py
+      - name: Dotazy na e-mail
+        if: github.event_name == 'schedule' && github.event.schedule == '35 * * * *'
+        env:
+          PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: python alerts.py
+      - name: Obrazek
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-image
+          path: post.jpg
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Ulozit stav
+        if: success()
+        run: |
+          git config user.name "primorsko-bot"
+          git config user.email "primorsko-bot@users.noreply.github.com"
+          git add posted.json alerts_seen.json 2>/dev/null || true
+          git commit -m "stav $(date -u +%F-%H%M)" || echo "nic noveho"
+          git pull --rebase -q || true
+          git push
